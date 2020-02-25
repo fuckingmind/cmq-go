@@ -2,11 +2,13 @@ package test
 
 import (
 	"testing"
-	"github.com/NETkiddy/cmq-go"
+
+	cmq_go "github.com/glutwins/cmq-go"
 )
 
 var endpointTopic = "https://cmq-topic-sh.api.qcloud.com"
 var endpointTopicInner = "http://cmq-topic-sh.api.tencentyun.com"
+
 //-----------------------------------------------------------------
 // 创建主题
 func Test_CreateTopic(t *testing.T) {

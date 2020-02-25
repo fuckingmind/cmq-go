@@ -5,7 +5,7 @@ Tencent CMQ Golang SDK
 
 ## Getting Started
 
-所有的API中都有[test case](https://github.com/NETkiddy/cmq-go/tree/master/test)，这里使用[CreateQueue](https://github.com/NETkiddy/cmq-go/blob/master/test/cmq_queue_test.go#L15)举例。
+所有的API中都有[test case](https://github.com/glutwins/cmq-go/tree/master/test)，这里使用[CreateQueue](https://github.com/glutwins/cmq-go/blob/master/test/cmq_queue_test.go#L15)举例。
 ```
 var secretId = "YourTencentSecretId"
 var secretKey = "YourTencentSecretKey"

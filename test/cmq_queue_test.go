@@ -2,7 +2,8 @@ package test
 
 import (
 	"testing"
-	"github.com/NETkiddy/cmq-go"
+
+	cmq_go "github.com/glutwins/cmq-go"
 )
 
 var secretId = "YourTencentSecretId"
@@ -110,11 +111,11 @@ func Test_SendReceiveDeleteMessage(t *testing.T) {
 	// receive
 	msg, err, code := queue.ReceiveMessage(10)
 	if err != nil {
-		if code == 7000{
+		if code == 7000 {
 			t.Logf("no message")
-		}else if code == 6070{
+		} else if code == 6070 {
 			t.Logf("too many unacked(inactive messages or delayed messages)")
-		}else {
+		} else {
 			t.Error(err)
 			return
 		}
