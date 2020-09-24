@@ -1,10 +1,9 @@
 package cmq_go
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
-	"encoding/json"
-	"net/http"
 )
 
 const (
@@ -17,27 +16,8 @@ type Account struct {
 
 func NewAccount(endpoint, secretId, secretKey string) *Account {
 	return &Account{
-		client: NewCMQClient(endpoint, "/v2/index.php", secretId, secretKey, "POST"),
+		client: NewCMQClient(endpoint, "/v2/index.php", secretId, secretKey),
 	}
-}
-
-func (this *Account) SetProxy(proxyUrl string) *Account{
-	this.client.setProxy(proxyUrl)
-	return this
-}
-
-func (this *Account) UnsetProxy() *Account{
-	this.client.unsetProxy()
-	return this
-}
-
-func (this *Account) SetTransport(transport http.RoundTripper) *Account{
-	this.client.CmqHttp.SetTransport(transport)
-	return this
-}
-
-func (this *Account) setSignMethod(method string) (err error) {
-	return this.client.setSignMethod(method)
 }
 
 func (this *Account) CreateQueue(queueName string, queueMeta QueueMeta) (err error, code int) {
@@ -69,10 +49,6 @@ func (this *Account) CreateQueue(queueName string, queueMeta QueueMeta) (err err
 	}
 
 	_, err, code = doCall(this.client, param, "CreateQueue")
-	if err != nil {
-		//log.Printf("client.call CreateQueue failed: %v\n", err.Error())
-		return
-	}
 	return
 }
 
@@ -81,16 +57,11 @@ func (this *Account) DeleteQueue(queueName string) (err error, code int) {
 	param := make(map[string]string)
 	if queueName == "" {
 		err = fmt.Errorf("deleteQueue failed: queueName is empty")
-		//log.Printf("%v", err.Error())
 		return
 	}
 	param["queueName"] = queueName
 
 	_, err, code = doCall(this.client, param, "DeleteQueue")
-	if err != nil {
-		//log.Printf("client.call DeleteQueue failed: %v\n", err.Error())
-		return
-	}
 	return
 }
 

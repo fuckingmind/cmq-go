@@ -1,13 +1,20 @@
 package cmq_go
 
 import (
+	"bytes"
+	"crypto/hmac"
+	"crypto/sha1"
+	"encoding/base64"
 	"fmt"
+	"io/ioutil"
 	"math/rand"
-	"time"
-	"strings"
+	"net"
+	"net/http"
 	"net/url"
-	"strconv"
 	"sort"
+	"strconv"
+	"strings"
+	"time"
 )
 
 const (
@@ -15,45 +22,34 @@ const (
 )
 
 type CMQClient struct {
-	Endpoint   string
-	Path       string
-	SecretId   string
-	SecretKey  string
-	Method     string
-	SignMethod string
-	CmqHttp    *CMQHttp
+	Endpoint  string
+	Path      string
+	SecretId  string
+	SecretKey string
+	conn      *http.Client
 }
 
-func NewCMQClient(endpoint, path, secretId, secretKey, method string) *CMQClient {
+func NewCMQClient(endpoint, path, secretId, secretKey string) *CMQClient {
 	return &CMQClient{
-		Endpoint:   endpoint,
-		Path:       path,
-		SecretId:   secretId,
-		SecretKey:  secretKey,
-		Method:     method,
-		SignMethod: "sha1",
-		CmqHttp:    NewCMQHttp(),
+		Endpoint:  endpoint,
+		Path:      path,
+		SecretId:  secretId,
+		SecretKey: secretKey,
+		conn: &http.Client{
+			Transport: &http.Transport{
+				DialContext: (&net.Dialer{
+					Timeout:   30 * time.Second,
+					KeepAlive: 30 * time.Second,
+					DualStack: true,
+				}).DialContext,
+				MaxIdleConns:          500,
+				MaxIdleConnsPerHost:   100,
+				IdleConnTimeout:       90 * time.Second,
+				TLSHandshakeTimeout:   10 * time.Second,
+				ExpectContinueTimeout: 1 * time.Second,
+			},
+		},
 	}
-}
-
-func (this *CMQClient) setSignMethod(signMethod string) (err error) {
-	if signMethod != "sha1" && signMethod != "sha256" {
-		err = fmt.Errorf("Only support sha1 or sha256 now")
-		return
-	} else {
-		this.SignMethod = signMethod
-	}
-	return
-}
-
-func (this *CMQClient) setProxy(proxyUrl string) {
-	this.CmqHttp.setProxy(proxyUrl)
-	return
-}
-
-func (this *CMQClient) unsetProxy() {
-	this.CmqHttp.unsetProxy()
-	return
 }
 
 func (this *CMQClient) call(action string, param map[string]string) (resp string, err error) {
@@ -62,13 +58,9 @@ func (this *CMQClient) call(action string, param map[string]string) (resp string
 	param["SecretId"] = this.SecretId
 	param["Timestamp"] = strconv.FormatInt(time.Now().Unix(), 10)
 	param["RequestClient"] = CURRENT_VERSION
-	if this.SignMethod == "sha256" {
-		param["SignatureMethod"] = "HmacSHA256"
-	} else {
-		param["SignatureMethod"] = "HmacSHA1"
-	}
+	param["SignatureMethod"] = "HmacSHA1"
 	sortedParamKeys := make([]string, 0)
-	for k, _ := range param {
+	for k := range param {
 		sortedParamKeys = append(sortedParamKeys, k)
 	}
 	sort.Strings(sortedParamKeys)
@@ -80,7 +72,7 @@ func (this *CMQClient) call(action string, param map[string]string) (resp string
 		host = this.Endpoint[7:]
 	}
 
-	src := this.Method + host + this.Path + "?"
+	src := http.MethodPost + host + this.Path + "?"
 	flag := false
 	for _, key := range sortedParamKeys {
 		if flag {
@@ -89,36 +81,20 @@ func (this *CMQClient) call(action string, param map[string]string) (resp string
 		src += key + "=" + param[key]
 		flag = true
 	}
-	param["Signature"] = Sign(src, this.SecretKey, this.SignMethod)
-	urlStr := ""
+	mac := hmac.New(sha1.New, []byte(this.SecretKey))
+	mac.Write([]byte(src))
+	param["Signature"] = base64.StdEncoding.EncodeToString(mac.Sum(nil))
+
 	reqStr := ""
-	if this.Method == "GET" {
-		urlStr = this.Endpoint + this.Path + "?"
-		flag = false
-		for k, v := range param {
-			if flag {
-				urlStr += "&"
-			}
-			urlStr += k + "=" + url.QueryEscape(v)
-			flag = true
+	urlStr := this.Endpoint + this.Path
+	flag = false
+	for k, v := range param {
+		if flag {
+			reqStr += "&"
 		}
-		if len(urlStr) > 2048 {
-			err = fmt.Errorf("url string length is large than 2048")
-			return
-		}
-	} else {
-		urlStr = this.Endpoint + this.Path
-		flag := false
-		for k, v := range param {
-			if flag {
-				reqStr += "&"
-			}
-			reqStr += k + "=" + url.QueryEscape(v)
-			flag = true
-		}
+		reqStr += k + "=" + url.QueryEscape(v)
+		flag = true
 	}
-	//log.Printf("urlStr :%v", urlStr)
-	//log.Printf("reqStr :%v", reqStr)
 
 	userTimeout := 0
 	if UserpollingWaitSeconds, found := param["UserpollingWaitSeconds"]; found {
@@ -128,9 +104,33 @@ func (this *CMQClient) call(action string, param map[string]string) (resp string
 		}
 	}
 
-	resp, err = this.CmqHttp.request(this.Method, urlStr, reqStr, userTimeout)
-	if err != nil {
-		return resp, fmt.Errorf("CmqHttp.request failed: %v", err.Error())
+	resp, err = this.doPost(urlStr, reqStr, userTimeout)
+	return
+}
+
+func (this *CMQClient) doPost(urlStr, reqStr string, userTimeout int) (result string, err error) {
+	timeout := 3000
+	if userTimeout >= 0 {
+		timeout += userTimeout
 	}
+	this.conn.Timeout = time.Duration(timeout) * time.Millisecond
+
+	req, err := http.NewRequest(http.MethodPost, urlStr, bytes.NewReader([]byte(reqStr)))
+	if err != nil {
+		return "", fmt.Errorf("make http req error %v", err)
+	}
+	resp, err := this.conn.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("http error  %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("http error code %d", resp.StatusCode)
+	}
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read http resp body error %v", err)
+	}
+	result = string(body)
 	return
 }
