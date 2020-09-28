@@ -97,9 +97,8 @@ func _publishMessage(client *CMQClient, topicName, msg string, tagList []string,
 	return resp.MsgID, nil
 }
 
-func (this *Topic) BatchPublishMessage(msgList []string) (msgIds []string, err error) {
-	msgIds, err = _batchPublishMessage(this.client, this.topicName, msgList, nil, "")
-	return
+func (this *Topic) BatchPublishMessage(msgList []string) ([]string, error) {
+	return _batchPublishMessage(this.client, this.topicName, msgList, nil, "")
 }
 
 func _batchPublishMessage(client *CMQClient, topicName string, msgList, tagList []string, routingKey string) (msgIds []string, err error) {
@@ -108,15 +107,11 @@ func _batchPublishMessage(client *CMQClient, topicName string, msgList, tagList 
 	if routingKey != "" {
 		param["routingKey"] = routingKey
 	}
-	if msgList != nil {
-		for i, msg := range msgList {
-			param["msgBody."+strconv.Itoa(i+1)] = msg
-		}
+	for i, msg := range msgList {
+		param["msgBody."+strconv.Itoa(i+1)] = msg
 	}
-	if tagList != nil {
-		for i, tag := range tagList {
-			param["msgTag."+strconv.Itoa(i+1)] = tag
-		}
+	for i, tag := range tagList {
+		param["msgTag."+strconv.Itoa(i+1)] = tag
 	}
 
 	var resp struct {

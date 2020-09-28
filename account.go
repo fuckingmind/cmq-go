@@ -5,10 +5,6 @@ import (
 	"strconv"
 )
 
-const (
-	DEFAULT_ERROR_CODE = -1
-)
-
 type Account struct {
 	client *CMQClient
 }
@@ -168,12 +164,8 @@ func (this *Account) ListTopic(searchWord string, offset, limit int) (
 	return
 }
 
-func (this *Account) CreateSubscribe(topicName, subscriptionName, endpoint, protocol, notifyContentFormat string) (
-	err error) {
-	err = _createSubscribe(
-		this.client, topicName, subscriptionName, endpoint, protocol, nil, nil,
-		NotifyStrategyDefault, notifyContentFormat)
-	return
+func (this *Account) CreateSubscribe(topicName, subscriptionName, endpoint, protocol, notifyContentFormat string) error {
+	return _createSubscribe(this.client, topicName, subscriptionName, endpoint, protocol, nil, nil, "BACKOFF_RETRY", notifyContentFormat)
 }
 
 func _createSubscribe(client *CMQClient, topicName, subscriptionName, endpoint, protocol string, filterTag []string,
