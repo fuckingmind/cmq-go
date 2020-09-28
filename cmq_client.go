@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha1"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
@@ -13,7 +14,6 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -22,17 +22,14 @@ const (
 )
 
 type CMQClient struct {
-	Endpoint  string
-	Path      string
+	uri       *url.URL
 	SecretId  string
 	SecretKey string
 	conn      *http.Client
 }
 
 func NewCMQClient(endpoint, path, secretId, secretKey string) *CMQClient {
-	return &CMQClient{
-		Endpoint:  endpoint,
-		Path:      path,
+	client := &CMQClient{
 		SecretId:  secretId,
 		SecretKey: secretKey,
 		conn: &http.Client{
@@ -50,87 +47,68 @@ func NewCMQClient(endpoint, path, secretId, secretKey string) *CMQClient {
 			},
 		},
 	}
+
+	client.uri, _ = url.Parse(endpoint + path)
+	return client
 }
 
-func (this *CMQClient) call(action string, param map[string]string) (resp string, err error) {
-	param["Action"] = action
-	param["Nonce"] = strconv.Itoa(rand.Int())
-	param["SecretId"] = this.SecretId
-	param["Timestamp"] = strconv.FormatInt(time.Now().Unix(), 10)
-	param["RequestClient"] = CURRENT_VERSION
-	param["SignatureMethod"] = "HmacSHA1"
+func (this *CMQClient) callWithoutResult(action string, param map[string]string) error {
+	res := &CommResp{}
+	if err := this.call(action, param, res); err != nil {
+		return err
+	}
+	if res.Code != 0 {
+		return res
+	}
+	return nil
+}
+
+func (this *CMQClient) call(action string, param map[string]string, ires interface{}) error {
+	uriParams := make(url.Values)
+	for k, v := range param {
+		uriParams.Set(k, v)
+	}
+	uriParams.Set("Action", action)
+	uriParams.Set("Nonce", strconv.Itoa(rand.Int()))
+	uriParams.Set("SecretId", this.SecretId)
+	uriParams.Set("Timestamp", strconv.FormatInt(time.Now().Unix(), 10))
+	uriParams.Set("RequestClient", CURRENT_VERSION)
+	uriParams.Set("SignatureMethod", "HmacSHA1")
+
 	sortedParamKeys := make([]string, 0)
 	for k := range param {
 		sortedParamKeys = append(sortedParamKeys, k)
 	}
 	sort.Strings(sortedParamKeys)
 
-	host := ""
-	if strings.HasPrefix(this.Endpoint, "https") {
-		host = this.Endpoint[8:]
-	} else {
-		host = this.Endpoint[7:]
-	}
-
-	src := http.MethodPost + host + this.Path + "?"
-	flag := false
-	for _, key := range sortedParamKeys {
-		if flag {
-			src += "&"
-		}
-		src += key + "=" + param[key]
-		flag = true
-	}
+	paramStr := uriParams.Encode()
 	mac := hmac.New(sha1.New, []byte(this.SecretKey))
-	mac.Write([]byte(src))
-	param["Signature"] = base64.StdEncoding.EncodeToString(mac.Sum(nil))
-
-	reqStr := ""
-	urlStr := this.Endpoint + this.Path
-	flag = false
-	for k, v := range param {
-		if flag {
-			reqStr += "&"
-		}
-		reqStr += k + "=" + url.QueryEscape(v)
-		flag = true
-	}
+	mac.Write([]byte(http.MethodPost + this.uri.Host + this.uri.Path + "?" + paramStr))
+	paramStr += "&Signature=" + base64.StdEncoding.EncodeToString(mac.Sum(nil))
 
 	userTimeout := 0
 	if UserpollingWaitSeconds, found := param["UserpollingWaitSeconds"]; found {
-		userTimeout, err = strconv.Atoi(UserpollingWaitSeconds)
-		if err != nil {
-			return "", fmt.Errorf("strconv failed: %v", err.Error())
-		}
+		userTimeout, _ = strconv.Atoi(UserpollingWaitSeconds)
 	}
 
-	resp, err = this.doPost(urlStr, reqStr, userTimeout)
-	return
-}
+	this.conn.Timeout = time.Duration(3000+userTimeout) * time.Millisecond
 
-func (this *CMQClient) doPost(urlStr, reqStr string, userTimeout int) (result string, err error) {
-	timeout := 3000
-	if userTimeout >= 0 {
-		timeout += userTimeout
-	}
-	this.conn.Timeout = time.Duration(timeout) * time.Millisecond
-
-	req, err := http.NewRequest(http.MethodPost, urlStr, bytes.NewReader([]byte(reqStr)))
+	req, err := http.NewRequest(http.MethodPost, this.uri.String(), bytes.NewReader([]byte(paramStr)))
 	if err != nil {
-		return "", fmt.Errorf("make http req error %v", err)
+		return err
 	}
 	resp, err := this.conn.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("http error  %v", err)
+		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("http error code %d", resp.StatusCode)
+		return fmt.Errorf("http error code %d", resp.StatusCode)
 	}
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("read http resp body error %v", err)
+		return err
 	}
-	result = string(body)
-	return
+
+	return json.Unmarshal(body, ires)
 }

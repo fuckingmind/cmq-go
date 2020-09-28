@@ -1,41 +1,30 @@
 package cmq_go
 
-const (
-	/** 缺省消息接收长轮询等待时间 */
-	DEFAULT_POLLING_WAIT_SECONDS = 0
-	/** 缺省消息可见性超时 */
-	DEFAULT_VISIBILITY_TIMEOUT = 30
-	/** 缺省消息最大长度，单位字节 */
-	DEFAULT_MAX_MSG_SIZE = 1048576
-	/** 缺省消息保留周期，单位秒 */
-	DEFAULT_MSG_RETENTION_SECONDS = 345600
-)
-
 type QueueMeta struct {
 	/** 最大堆积消息数 */
-	MaxMsgHeapNum int
+	MaxMsgHeapNum int `json:"maxMsgHeapNum"`
 	/** 消息接收长轮询等待时间 */
-	PollingWaitSeconds int
+	PollingWaitSeconds int `json:"pollingWaitSeconds"`
 	/** 消息可见性超时 */
-	VisibilityTimeout int
+	VisibilityTimeout int `json:"visibilityTimeout"`
 	/** 消息最大长度 */
-	MaxMsgSize int
+	MaxMsgSize int `json:"maxMsgSize"`
 	/** 消息保留周期 */
-	MsgRetentionSeconds int
+	MsgRetentionSeconds int `json:"msgRetentionSeconds"`
 	/** 队列创建时间 */
-	CreateTime int
+	CreateTime int `json:"createTime"`
 	/** 队列属性最后修改时间 */
-	LastModifyTime int
+	LastModifyTime int `json:"lastModifyTime"`
 	/** 队列处于Active状态的消息总数 */
-	ActiveMsgNum int
+	ActiveMsgNum int `json:"activeMsgNum"`
 	/** 队列处于Inactive状态的消息总数 */
-	InactiveMsgNum int
+	InactiveMsgNum int `json:"inactiveMsgNum"`
 	/** 已删除的消息，但还在回溯保留时间内的消息数量 */
-	RewindMsgNum int
+	RewindMsgNum int `json:"rewindMsgNum"`
 	/** 消息最小未消费时间 */
-	MinMsgTime int
+	MinMsgTime int `json:"minMsgTime"`
 	/** 延时消息数量 */
-	DelayMsgNum int
+	DelayMsgNum int `json:"delayMsgNum"`
 	/** 回溯时间 */
-	RewindSeconds int
+	RewindSeconds int `json:"rewindSeconds"`
 }

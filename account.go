@@ -1,7 +1,6 @@
 package cmq_go
 
 import (
-	"encoding/json"
 	"fmt"
 	"strconv"
 )
@@ -20,54 +19,43 @@ func NewAccount(endpoint, secretId, secretKey string) *Account {
 	}
 }
 
-func (this *Account) CreateQueue(queueName string, queueMeta QueueMeta) (err error, code int) {
-	code = DEFAULT_ERROR_CODE
-	param := make(map[string]string)
-	if queueName == "" {
-		err = fmt.Errorf("createQueue failed: queueName is empty")
-		//log.Printf("%v", err.Error())
-		return
-	}
-	param["queueName"] = queueName
-	if queueMeta.MaxMsgHeapNum > 0 {
-		param["maxMsgHeapNum"] = strconv.Itoa(queueMeta.MaxMsgHeapNum)
-	}
-	if queueMeta.PollingWaitSeconds > 0 {
-		param["pollingWaitSeconds"] = strconv.Itoa(queueMeta.PollingWaitSeconds)
-	}
-	if queueMeta.VisibilityTimeout > 0 {
-		param["visibilityTimeout"] = strconv.Itoa(queueMeta.VisibilityTimeout)
-	}
-	if queueMeta.MaxMsgSize > 0 {
-		param["maxMsgSize"] = strconv.Itoa(queueMeta.MaxMsgSize)
-	}
-	if queueMeta.MsgRetentionSeconds > 0 {
-		param["msgRetentionSeconds"] = strconv.Itoa(queueMeta.MsgRetentionSeconds)
-	}
-	if queueMeta.RewindSeconds > 0 {
-		param["rewindSeconds"] = strconv.Itoa(queueMeta.RewindSeconds)
-	}
+func (this *Account) CreateQueue(queueName string, queueMeta QueueMeta) error {
+	if queueName != "" {
+		param := make(map[string]string)
+		param["queueName"] = queueName
+		if queueMeta.MaxMsgHeapNum > 0 {
+			param["maxMsgHeapNum"] = strconv.Itoa(queueMeta.MaxMsgHeapNum)
+		}
+		if queueMeta.PollingWaitSeconds > 0 {
+			param["pollingWaitSeconds"] = strconv.Itoa(queueMeta.PollingWaitSeconds)
+		}
+		if queueMeta.VisibilityTimeout > 0 {
+			param["visibilityTimeout"] = strconv.Itoa(queueMeta.VisibilityTimeout)
+		}
+		if queueMeta.MaxMsgSize > 0 {
+			param["maxMsgSize"] = strconv.Itoa(queueMeta.MaxMsgSize)
+		}
+		if queueMeta.MsgRetentionSeconds > 0 {
+			param["msgRetentionSeconds"] = strconv.Itoa(queueMeta.MsgRetentionSeconds)
+		}
+		if queueMeta.RewindSeconds > 0 {
+			param["rewindSeconds"] = strconv.Itoa(queueMeta.RewindSeconds)
+		}
 
-	_, err, code = doCall(this.client, param, "CreateQueue")
-	return
+		return this.client.callWithoutResult("CreateQueue", param)
+	}
+	return nil
 }
 
-func (this *Account) DeleteQueue(queueName string) (err error, code int) {
-	code = DEFAULT_ERROR_CODE
-	param := make(map[string]string)
-	if queueName == "" {
-		err = fmt.Errorf("deleteQueue failed: queueName is empty")
-		return
+func (this *Account) DeleteQueue(queueName string) error {
+	if queueName != "" {
+		return this.client.callWithoutResult("DeleteQueue", map[string]string{"queueName": queueName})
 	}
-	param["queueName"] = queueName
-
-	_, err, code = doCall(this.client, param, "DeleteQueue")
-	return
+	return nil
 }
 
 func (this *Account) ListQueue(searchWord string, offset, limit int) (
-	totalCount int, queueList []string, err error, code int) {
-	code = DEFAULT_ERROR_CODE
+	totalCount int, queueList []string, err error) {
 	queueList = make([]string, 0)
 	param := make(map[string]string)
 	if searchWord != "" {
@@ -80,17 +68,27 @@ func (this *Account) ListQueue(searchWord string, offset, limit int) (
 		param["limit"] = strconv.Itoa(limit)
 	}
 
-	resMap, err, code := doCall(this.client, param, "ListQueue")
-	if err != nil {
-		//log.Printf("client.call ListQueue failed: %v\n", err.Error())
-		return
+	var resp struct {
+		CommResp
+		TotalCount int `json:"totalCount"`
+		QueueList  []struct {
+			QueueName string `json:"queueName"`
+		} `json:"queueList"`
 	}
-	totalCount = int(resMap["totalCount"].(float64))
-	resQueueList := resMap["queueList"].([]interface{})
-	for _, v := range resQueueList {
-		queue := v.(map[string]interface{})
-		queueList = append(queueList, queue["queueName"].(string))
+
+	if err := this.client.call("ListQueue", param, &resp); err != nil {
+		return 0, nil, err
 	}
+
+	if resp.Code != 0 {
+		return 0, nil, &resp.CommResp
+	}
+
+	totalCount = resp.TotalCount
+	for _, q := range resp.QueueList {
+		queueList = append(queueList, q.QueueName)
+	}
+
 	return
 }
 
@@ -103,56 +101,37 @@ func (this *Account) GetTopic(topicName string) (topic *Topic) {
 }
 
 func (this *Account) CreateTopic(topicName string, maxMsgSize int) (err error, code int) {
-	err, code = _createTopic(this.client, topicName, maxMsgSize, 1)
+	err = _createTopic(this.client, topicName, maxMsgSize, 1)
 	return
 }
 
-func _createTopic(client *CMQClient, topicName string, maxMsgSize, filterType int) (err error, code int) {
-	code = DEFAULT_ERROR_CODE
+func _createTopic(client *CMQClient, topicName string, maxMsgSize, filterType int) (err error) {
 	param := make(map[string]string)
 	if topicName == "" {
 		err = fmt.Errorf("createTopic failed: topicName is empty")
-		//log.Printf("%v", err.Error())
 		return
 	}
 	param["topicName"] = topicName
 	param["filterType"] = strconv.Itoa(filterType)
 	if maxMsgSize < 1024 || maxMsgSize > 1048576 {
 		err = fmt.Errorf("createTopic failed: Invalid parameter: maxMsgSize > 1024KB or maxMsgSize < 1KB")
-		//log.Printf("%v", err.Error())
 		return
 	}
 	param["maxMsgSize"] = strconv.Itoa(maxMsgSize)
 
-	_, err, code = doCall(client, param, "CreateTopic")
-	if err != nil {
-		//log.Printf("client.call CreateTopic failed: %v\n", err.Error())
-		return
-	}
-	return
+	return client.callWithoutResult("CreateTopic", param)
+
 }
 
-func (this *Account) DeleteTopic(topicName string) (err error, code int) {
-	code = DEFAULT_ERROR_CODE
-	param := make(map[string]string)
-	if topicName == "" {
-		err = fmt.Errorf("deleteTopic failed: topicName is empty")
-		//log.Printf("%v", err.Error())
-		return
+func (this *Account) DeleteTopic(topicName string) error {
+	if topicName != "" {
+		return this.client.callWithoutResult("DeleteTopic", map[string]string{"topicName": topicName})
 	}
-	param["topicName"] = topicName
-
-	_, err, code = doCall(this.client, param, "DeleteTopic")
-	if err != nil {
-		//log.Printf("client.call DeleteTopic failed: %v\n", err.Error())
-		return
-	}
-	return
+	return nil
 }
 
 func (this *Account) ListTopic(searchWord string, offset, limit int) (
-	totalCount int, topicList []string, err error, code int) {
-	code = DEFAULT_ERROR_CODE
+	totalCount int, topicList []string, err error) {
 	topicList = make([]string, 0)
 	param := make(map[string]string)
 	if searchWord != "" {
@@ -165,70 +144,73 @@ func (this *Account) ListTopic(searchWord string, offset, limit int) (
 		param["limit"] = strconv.Itoa(limit)
 	}
 
-	resMap, err, code := doCall(this.client, param, "ListTopic")
-	if err != nil {
-		//log.Printf("client.call ListTopic failed: %v\n", err.Error())
-		return
+	var resp struct {
+		CommResp
+		TotalCount int `json:"totalCount"`
+		TopicList  []struct {
+			TopicName string `json:"topicName"`
+		} `json:"topicList"`
 	}
-	totalCount = int(resMap["totalCount"].(float64))
-	resTopicList := resMap["topicList"].([]interface{})
-	for _, v := range resTopicList {
-		topic := v.(map[string]interface{})
-		topicList = append(topicList, topic["topicName"].(string))
+
+	if err := this.client.call("ListTopic", param, &resp); err != nil {
+		return 0, nil, err
 	}
+
+	if resp.Code != 0 {
+		return 0, nil, &resp.CommResp
+	}
+
+	totalCount = resp.TotalCount
+	for _, q := range resp.TopicList {
+		topicList = append(topicList, q.TopicName)
+	}
+
 	return
 }
 
 func (this *Account) CreateSubscribe(topicName, subscriptionName, endpoint, protocol, notifyContentFormat string) (
-	err error, code int) {
-	err, code = _createSubscribe(
+	err error) {
+	err = _createSubscribe(
 		this.client, topicName, subscriptionName, endpoint, protocol, nil, nil,
 		NotifyStrategyDefault, notifyContentFormat)
 	return
 }
 
 func _createSubscribe(client *CMQClient, topicName, subscriptionName, endpoint, protocol string, filterTag []string,
-	bindingKey []string, notifyStrategy, notifyContentFormat string) (err error, code int) {
-	code = DEFAULT_ERROR_CODE
+	bindingKey []string, notifyStrategy, notifyContentFormat string) (err error) {
 	param := make(map[string]string)
 	if topicName == "" {
 		err = fmt.Errorf("createSubscribe failed: topicName is empty")
-		//log.Printf("%v", err.Error())
 		return
 	}
 	param["topicName"] = topicName
 
 	if subscriptionName == "" {
 		err = fmt.Errorf("createSubscribe failed: subscriptionName is empty")
-		//log.Printf("%v", err.Error())
 		return
 	}
 	param["subscriptionName"] = subscriptionName
 
 	if endpoint == "" {
 		err = fmt.Errorf("createSubscribe failed: endpoint is empty")
-		//log.Printf("%v", err.Error())
 		return
 	}
 	param["endpoint"] = endpoint
 
 	if protocol == "" {
 		err = fmt.Errorf("createSubscribe failed: protocal is empty")
-		//log.Printf("%v", err.Error())
 		return
 	}
 	param["protocol"] = protocol
 
 	if notifyStrategy == "" {
 		err = fmt.Errorf("createSubscribe failed: notifyStrategy is empty")
-		//log.Printf("%v", err.Error())
 		return
 	}
 	param["notifyStrategy"] = notifyStrategy
 
 	if notifyContentFormat == "" {
 		err = fmt.Errorf("createSubscribe failed: notifyContentFormat is empty")
-		//log.Printf("%v", err.Error())
 		return
 	}
 	param["notifyContentFormat"] = notifyContentFormat
@@ -245,20 +227,13 @@ func _createSubscribe(client *CMQClient, topicName, subscriptionName, endpoint, 
 		}
 	}
 
-	_, err, code = doCall(client, param, "Subscribe")
-	if err != nil {
-		//log.Printf("client.call Subscribe failed: %v\n", err.Error())
-		return
-	}
-	return
+	return client.callWithoutResult("Subscribe", param)
 }
 
-func (this *Account) DeleteSubscribe(topicName, subscriptionName string) (err error, code int) {
-	code = DEFAULT_ERROR_CODE
+func (this *Account) DeleteSubscribe(topicName, subscriptionName string) (err error) {
 	param := make(map[string]string)
 	if topicName == "" {
 		err = fmt.Errorf("createSubscribe failed: topicName is empty")
-		//log.Printf("%v", err.Error())
 		return
 	}
 	param["topicName"] = topicName
@@ -269,40 +244,9 @@ func (this *Account) DeleteSubscribe(topicName, subscriptionName string) (err er
 		return
 	}
 	param["subscriptionName"] = subscriptionName
-
-	_, err, code = doCall(this.client, param, "Unsubscribe")
-	if err != nil {
-		//log.Printf("client.call Unsubscribe failed: %v\n", err.Error())
-		return
-	}
-	return
+	return this.client.callWithoutResult("Unsubscribe", param)
 }
 
 func (this *Account) GetSubscription(topicName, subscriptionName string) *Subscription {
 	return NewSubscription(topicName, subscriptionName, this.client)
-}
-
-func doCall(client *CMQClient, param map[string]string, opration string) (resMap map[string]interface{}, err error, code int) {
-	code = DEFAULT_ERROR_CODE
-	res, err := client.call(opration, param)
-	if err != nil {
-		//log.Printf("client.call %v failed: %v\n", opration, err.Error())
-		return
-	}
-	//log.Printf("res: %v", res)
-
-	resMap = make(map[string]interface{}, 0)
-	err = json.Unmarshal([]byte(res), &resMap)
-	if err != nil {
-		//log.Printf(err.Error())
-		return
-	}
-	code = int(resMap["code"].(float64))
-	if code != 0 {
-		err = fmt.Errorf("%v failed: code: %v, message: %v, requestId: %v", opration, code, resMap["message"], resMap["requestId"])
-		//log.Printf(err.Error())
-		return
-	}
-
-	return
 }

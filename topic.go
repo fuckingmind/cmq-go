@@ -17,56 +17,60 @@ func NewTopic(topicName string, client *CMQClient) (queue *Topic) {
 	}
 }
 
-func (this *Topic) SetTopicAttributes(maxMsgSize int) (err error, code int) {
-	code = DEFAULT_ERROR_CODE
+func (this *Topic) SetTopicAttributes(maxMsgSize int) (err error) {
 	if maxMsgSize < 1024 || maxMsgSize > 1048576 {
 		err = fmt.Errorf("Invalid parameter maxMsgSize < 1KB or maxMsgSize > 1024KB")
-		//log.Printf("%v", err.Error())
 		return
 	}
 	param := make(map[string]string)
 	param["topicName"] = this.topicName
-	if maxMsgSize > 0 {
-		param["maxMsgSize"] = strconv.Itoa(maxMsgSize)
-	}
+	param["maxMsgSize"] = strconv.Itoa(maxMsgSize)
 
-	_, err, code = doCall(this.client, param, "SetTopicAttributes")
-	if err != nil {
-		//log.Printf("client.call SetTopicAttributes failed: %v\n", err.Error())
-		return
-	}
-	return
+	return this.client.callWithoutResult("SetTopicAttributes", param)
 }
 
-func (this *Topic) GetTopicAttributes() (meta TopicMeta, err error, code int) {
-	code = DEFAULT_ERROR_CODE
+type TopicMeta struct {
+	// 当前该主题的消息堆积数
+	MsgCount int `json:"msgCount"`
+	// 消息最大长度，取值范围1024-1048576 Byte（即1-1024K），默认1048576
+	MaxMsgSize int `json:"maxMsgSize"`
+	//消息在主题中最长存活时间，从发送到该主题开始经过此参数指定的时间后，
+	//不论消息是否被成功推送给用户都将被删除，单位为秒。固定为一天，该属性不能修改。
+	MsgRetentionSeconds int `json:"msgRetentionSeconds"`
+	//创建时间
+	CreateTime int `json:"createTime"`
+	//修改属性信息最近时间
+	LastModifyTime int `json:"lastModifyTime"`
+	LoggingEnabled int `json:"loggingEnabled"`
+	FilterType     int `json:"filterType"`
+}
+
+func (this *Topic) GetTopicAttributes() (TopicMeta, error) {
 	param := make(map[string]string)
 	param["topicName"] = this.topicName
 
-	resMap, err, code := doCall(this.client, param, "GetTopicAttributes")
-	if err != nil {
-		//log.Printf("client.call GetTopicAttributes failed: %v\n", err.Error())
-		return
+	var resp struct {
+		CommResp
+		TopicMeta
 	}
-	pmeta := NewTopicMeta()
-	pmeta.MsgCount = int(resMap["msgCount"].(float64))
-	pmeta.MaxMsgSize = int(resMap["maxMsgSize"].(float64))
-	pmeta.MsgRetentionSeconds = int(resMap["msgRetentionSeconds"].(float64))
-	pmeta.CreateTime = int(resMap["createTime"].(float64))
-	pmeta.LastModifyTime = int(resMap["lastModifyTime"].(float64))
 
-	meta = *pmeta
+	if err := this.client.call("GetTopicAttributes", param, &resp); err != nil {
+		return resp.TopicMeta, err
+	}
+
+	if resp.Code != 0 {
+		return resp.TopicMeta, &resp.CommResp
+	}
+
+	return resp.TopicMeta, nil
+}
+
+func (this *Topic) PublishMessage(message string, tagList []string) (msgId string, err error) {
+	msgId, err = _publishMessage(this.client, this.topicName, message, tagList, "")
 	return
 }
 
-func (this *Topic) PublishMessage(message string, tagList []string) (msgId string, err error, code int) {
-	msgId, err, code = _publishMessage(this.client, this.topicName, message, tagList, "")
-	return
-}
-
-func _publishMessage(client *CMQClient, topicName, msg string, tagList []string, routingKey string) (
-	msgId string, err error, code int) {
-	code = DEFAULT_ERROR_CODE
+func _publishMessage(client *CMQClient, topicName, msg string, tagList []string, routingKey string) (string, error) {
 	param := make(map[string]string)
 	param["topicName"] = topicName
 	param["msgBody"] = msg
@@ -78,23 +82,27 @@ func _publishMessage(client *CMQClient, topicName, msg string, tagList []string,
 			param["msgTag."+strconv.Itoa(i+1)] = tag
 		}
 	}
-	resMap, err, code := doCall(client, param, "PublishMessage")
-	if err != nil {
-		return
+
+	var resp struct {
+		CommResp
+		MsgID string `json:"msgId"`
 	}
-	msgId = resMap["msgId"].(string)
 
+	if err := client.call("PublishMessage", param, &resp); err != nil {
+		return "", err
+	}
+	if resp.Code != 0 {
+		return "", &resp.CommResp
+	}
+	return resp.MsgID, nil
+}
+
+func (this *Topic) BatchPublishMessage(msgList []string) (msgIds []string, err error) {
+	msgIds, err = _batchPublishMessage(this.client, this.topicName, msgList, nil, "")
 	return
 }
 
-func (this *Topic) BatchPublishMessage(msgList []string) (msgIds []string, err error, code int) {
-	msgIds, err, code = _batchPublishMessage(this.client, this.topicName, msgList, nil, "")
-	return
-}
-
-func _batchPublishMessage(client *CMQClient, topicName string, msgList, tagList []string, routingKey string) (
-	msgIds []string, err error, code int) {
-	code = DEFAULT_ERROR_CODE
+func _batchPublishMessage(client *CMQClient, topicName string, msgList, tagList []string, routingKey string) (msgIds []string, err error) {
 	param := make(map[string]string)
 	param["topicName"] = topicName
 	if routingKey != "" {
@@ -111,22 +119,29 @@ func _batchPublishMessage(client *CMQClient, topicName string, msgList, tagList 
 		}
 	}
 
-	resMap, err, code := doCall(client, param, "BatchPublishMessage")
-	if err != nil {
-		//log.Printf("client.call BatchPublishMessage failed: %v\n", err.Error())
-		return
+	var resp struct {
+		CommResp
+		MsgList []struct {
+			MsgID string `json:"msgId"`
+		} `json:"msgList"`
 	}
-	resMsgList := resMap["msgList"].([]interface{})
-	for _, v := range resMsgList {
-		msg := v.(map[string]interface{})
-		msgIds = append(msgIds, msg["msgId"].(string))
+
+	if err := client.call("BatchPublishMessage", param, &resp); err != nil {
+		return nil, err
+	}
+
+	if resp.Code != 0 {
+		return nil, &resp.CommResp
+	}
+
+	for _, msg := range resp.MsgList {
+		msgIds = append(msgIds, msg.MsgID)
 	}
 
 	return
 }
 
-func (this *Topic) ListSubscription(offset, limit int, searchWord string) (totalCount int, subscriptionList []string, err error, code int) {
-	code = DEFAULT_ERROR_CODE
+func (this *Topic) ListSubscription(offset, limit int, searchWord string) (totalCount int, subscriptionList []string, err error) {
 	param := make(map[string]string)
 	param["topicName"] = this.topicName
 	if searchWord != "" {
@@ -139,18 +154,25 @@ func (this *Topic) ListSubscription(offset, limit int, searchWord string) (total
 		param["limit "] = strconv.Itoa(limit)
 	}
 
-	resMap, err, code := doCall(this.client, param, "ListSubscriptionByTopic")
-	if err != nil {
-		//log.Printf("client.call ListSubscriptionByTopic failed: %v\n", err.Error())
-		return
+	var resp struct {
+		CommResp
+		TotalCount       int `json:"totalCount"`
+		SubscriptionList []struct {
+			SubscriptionName string `json:"subscriptionName"`
+		} `json:"subscriptionList"`
 	}
 
-	totalCount = int(resMap["totalCount"].(float64))
-	resSubscriptionList := resMap["subscriptionList"].([]interface{})
-	for _, v := range resSubscriptionList {
-		subscribe := v.(map[string]interface{})
-		subscriptionList = append(subscriptionList, subscribe["subscriptionName"].(string))
+	if err := this.client.call("ListSubscriptionByTopic", param, &resp); err != nil {
+		return 0, nil, err
 	}
 
+	if resp.Code != 0 {
+		return 0, nil, &resp.CommResp
+	}
+
+	totalCount = resp.TotalCount
+	for _, sub := range resp.SubscriptionList {
+		subscriptionList = append(subscriptionList, sub.SubscriptionName)
+	}
 	return
 }

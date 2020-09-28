@@ -18,23 +18,15 @@ func NewSubscription(topicName, subscriptionName string, client *CMQClient) *Sub
 	}
 }
 
-func (this *Subscription) ClearFilterTags() (err error, code int) {
-	code = DEFAULT_ERROR_CODE
+func (this *Subscription) ClearFilterTags() (err error) {
 	param := make(map[string]string)
 	param["topicName"] = this.topicName
 	param["subscriptionName "] = this.subscriptionName
 
-	_, err, code = doCall(this.client, param, "ClearSubscriptionFilterTags")
-	if err != nil {
-		//log.Printf("client.call ClearSubscriptionFilterTags failed: %v\n", err.Error())
-		return
-	}
-
-	return
+	return this.client.callWithoutResult("ClearSubscriptionFilterTags", param)
 }
 
-func (this *Subscription) SetSubscriptionAttributes(meta SubscriptionMeta) (err error, code int) {
-	code = DEFAULT_ERROR_CODE
+func (this *Subscription) SetSubscriptionAttributes(meta SubscriptionMeta) (err error) {
 	param := make(map[string]string)
 	param["topicName"] = this.topicName
 	param["subscriptionName "] = this.subscriptionName
@@ -55,50 +47,26 @@ func (this *Subscription) SetSubscriptionAttributes(meta SubscriptionMeta) (err 
 		}
 	}
 
-	_, err, code = doCall(this.client, param, "SetSubscriptionAttributes")
-	if err != nil {
-		//log.Printf("client.call SetSubscriptionAttributes failed: %v\n", err.Error())
-		return
-	}
-
-	return
+	return this.client.callWithoutResult("SetSubscriptionAttributes", param)
 }
 
-func (this *Subscription) GetSubscriptionAttributes() (meta *SubscriptionMeta, err error, code int) {
-	code = DEFAULT_ERROR_CODE
+func (this *Subscription) GetSubscriptionAttributes() (*SubscriptionMeta, error) {
 	param := make(map[string]string)
 	param["topicName"] = this.topicName
 	param["subscriptionName"] = this.subscriptionName
 
-	resMap, err, code := doCall(this.client, param, "GetSubscriptionAttributes")
-	if err != nil {
-		//log.Printf("client.call GetSubscriptionAttributes failed: %v\n", err.Error())
-		return
+	var resp struct {
+		CommResp
+		SubscriptionMeta
 	}
 
-	meta = NewSubscriptionMeta()
-	meta.FilterTag = make([]string, 0)
-	meta.BindingKey = make([]string, 0)
-	meta.TopicOwner = resMap["topicOwner"].(string)
-	meta.Endpoint = resMap["endpoint"].(string)
-	meta.Protocal = resMap["protocol"].(string)
-	meta.NotifyStrategy = resMap["notifyStrategy"].(string)
-	meta.NotifyContentFormat = resMap["notifyContentFormat"].(string)
-	meta.CreateTime = int(resMap["createTime"].(float64))
-	meta.LastModifyTime = int(resMap["lastModifyTime"].(float64))
-	meta.MsgCount = int(resMap["msgCount"].(float64))
-	if filterTag, found := resMap["filterTag"]; found {
-		for _, v := range filterTag.([]interface{}) {
-			filter := v.(string)
-			meta.FilterTag = append(meta.FilterTag, filter)
-		}
-	}
-	if bindingKey, found := resMap["bindingKey"]; found {
-		for _, v := range bindingKey.([]interface{}) {
-			binding := v.(string)
-			meta.BindingKey = append(meta.BindingKey, binding)
-		}
+	if err := this.client.call("GetSubscriptionAttributes", param, &resp); err != nil {
+		return nil, err
 	}
 
-	return
+	if resp.Code != 0 {
+		return nil, &resp.CommResp
+	}
+
+	return &resp.SubscriptionMeta, nil
 }

@@ -1,8 +1,8 @@
 package cmq_go
 
 import (
-	"strconv"
 	"fmt"
+	"strconv"
 )
 
 type Queue struct {
@@ -17,8 +17,7 @@ func NewQueue(queueName string, client *CMQClient) (queue *Queue) {
 	}
 }
 
-func (this *Queue) SetQueueAttributes(queueMeta QueueMeta) (err error, code int) {
-	code = DEFAULT_ERROR_CODE
+func (this *Queue) SetQueueAttributes(queueMeta QueueMeta) (err error) {
 	param := make(map[string]string)
 	param["queueName"] = this.queueName
 
@@ -41,86 +40,78 @@ func (this *Queue) SetQueueAttributes(queueMeta QueueMeta) (err error, code int)
 		param["rewindSeconds"] = strconv.Itoa(queueMeta.RewindSeconds)
 	}
 
-	_, err, code = doCall(this.client, param, "SetQueueAttributes")
-	if err != nil {
-		//log.Printf("client.call SetQueueAttributes failed: %v\n", err.Error())
-		return
-	}
-	return
+	return this.client.callWithoutResult("SetQueueAttributes", param)
 }
 
-func (this *Queue) GetQueueAttributes() (queueMeta QueueMeta, err error, code int) {
-	code = DEFAULT_ERROR_CODE
+func (this *Queue) GetQueueAttributes() (queueMeta QueueMeta, err error) {
 	param := make(map[string]string)
 	param["queueName"] = this.queueName
 
-	resMap, err, code := doCall(this.client, param, "GetQueueAttributes")
-	if err != nil {
-		//log.Printf("client.call GetQueueAttributes failed: %v\n", err.Error())
+	var resp struct {
+		CommResp
+		QueueMeta
+	}
+
+	if err = this.client.call("GetQueueAttributes", param, &resp); err != nil {
 		return
 	}
 
-	queueMeta.MaxMsgHeapNum = int(resMap["maxMsgHeapNum"].(float64))
-	queueMeta.PollingWaitSeconds = int(resMap["pollingWaitSeconds"].(float64))
-	queueMeta.VisibilityTimeout = int(resMap["visibilityTimeout"].(float64))
-	queueMeta.MaxMsgSize = int(resMap["maxMsgSize"].(float64))
-	queueMeta.MsgRetentionSeconds = int(resMap["msgRetentionSeconds"].(float64))
-	queueMeta.CreateTime = int(resMap["createTime"].(float64))
-	queueMeta.LastModifyTime = int(resMap["lastModifyTime"].(float64))
-	queueMeta.ActiveMsgNum = int(resMap["activeMsgNum"].(float64))
-	queueMeta.InactiveMsgNum = int(resMap["inactiveMsgNum"].(float64))
-	queueMeta.RewindMsgNum = int(resMap["rewindMsgNum"].(float64))
-	queueMeta.MinMsgTime = int(resMap["minMsgTime"].(float64))
-	queueMeta.DelayMsgNum = int(resMap["delayMsgNum"].(float64))
-	queueMeta.RewindSeconds = int(resMap["rewindSeconds"].(float64))
+	if resp.Code != 0 {
+		err = &resp.CommResp
+		return
+	}
 
+	queueMeta = resp.QueueMeta
 	return
 }
 
-func (this *Queue) SendMessage(msgBody string) (messageId string, err error, code int) {
-	messageId, err, code = _sendMessage(this.client, msgBody, this.queueName, 0)
+func (this *Queue) SendMessage(msgBody string) (messageId string, err error) {
+	messageId, err = _sendMessage(this.client, msgBody, this.queueName, 0)
 	return
 }
 
-func (this *Queue) SendDelayMessage(msgBody string, delaySeconds int) (messageId string, err error, code int) {
-	messageId, err, code = _sendMessage(this.client, msgBody, this.queueName, delaySeconds)
+func (this *Queue) SendDelayMessage(msgBody string, delaySeconds int) (messageId string, err error) {
+	messageId, err = _sendMessage(this.client, msgBody, this.queueName, delaySeconds)
 	return
 }
 
-func _sendMessage(client *CMQClient, msgBody, queueName string, delaySeconds int) (messageId string, err error, code int) {
-	code = DEFAULT_ERROR_CODE
+func _sendMessage(client *CMQClient, msgBody, queueName string, delaySeconds int) (messageId string, err error) {
 	param := make(map[string]string)
 	param["queueName"] = queueName
 	param["msgBody"] = msgBody
 	param["delaySeconds"] = strconv.Itoa(delaySeconds)
 
-	resMap, err, code := doCall(client, param, "SendMessage")
-	if err != nil {
-		//log.Printf("client.call GetQueueAttributes failed: %v\n", err.Error())
+	var resp struct {
+		CommResp
+		MsgID string `json:"msgId"`
+	}
+
+	if err = client.call("SendMessage", param, &resp); err != nil {
 		return
 	}
 
-	messageId = resMap["msgId"].(string)
+	if resp.Code != 0 {
+		return "", &resp.CommResp
+	}
+
+	return resp.MsgID, nil
+}
+
+func (this *Queue) BatchSendMessage(msgBodys []string) (messageIds []string, err error) {
+	messageIds, err = _batchSendMessage(this.client, msgBodys, this.queueName, 0)
 	return
 }
 
-func (this *Queue) BatchSendMessage(msgBodys []string) (messageIds []string, err error, code int) {
-	messageIds, err, code = _batchSendMessage(this.client, msgBodys, this.queueName, 0)
+func (this *Queue) BatchSendDelayMessage(msgBodys []string, delaySeconds int) (messageIds []string, err error) {
+	messageIds, err = _batchSendMessage(this.client, msgBodys, this.queueName, delaySeconds)
 	return
 }
 
-func (this *Queue) BatchSendDelayMessage(msgBodys []string, delaySeconds int) (messageIds []string, err error, code int) {
-	messageIds, err, code = _batchSendMessage(this.client, msgBodys, this.queueName, delaySeconds)
-	return
-}
-
-func _batchSendMessage(client *CMQClient, msgBodys []string, queueName string, delaySeconds int) (messageIds []string, err error, code int) {
-	code = DEFAULT_ERROR_CODE
+func _batchSendMessage(client *CMQClient, msgBodys []string, queueName string, delaySeconds int) (messageIds []string, err error) {
 	messageIds = make([]string, 0)
 
 	if len(msgBodys) == 0 || len(msgBodys) > 16 {
 		err = fmt.Errorf("message size is 0 or more than 16")
-		//log.Printf("%v", err.Error())
 		return
 	}
 
@@ -131,22 +122,29 @@ func _batchSendMessage(client *CMQClient, msgBodys []string, queueName string, d
 	}
 	param["delaySeconds"] = strconv.Itoa(delaySeconds)
 
-	resMap, err, code := doCall(client, param, "BatchSendMessage")
-	if err != nil {
-		//log.Printf("client.call BatchSendMessage failed: %v\n", err.Error())
+	var resp struct {
+		CommResp
+		Msgs []struct {
+			MsgID string `json:"msgId"`
+		} `json:"msgList"`
+	}
+
+	if err = client.call("BatchSendMessage", param, &resp); err != nil {
 		return
 	}
 
-	msgList := resMap["msgList"].([]interface{})
-	for _, v := range msgList {
-		msg := v.(map[string]interface{})
-		messageIds = append(messageIds, msg["msgId"].(string))
+	if resp.Code != 0 {
+		return nil, &resp.CommResp
 	}
-	return
+
+	for _, msg := range resp.Msgs {
+		messageIds = append(messageIds, msg.MsgID)
+	}
+
+	return messageIds, nil
 }
 
-func (this *Queue) ReceiveMessage(pollingWaitSeconds int) (msg Message, err error, code int) {
-	code = DEFAULT_ERROR_CODE
+func (this *Queue) ReceiveMessage(pollingWaitSeconds int) (Message, error) {
 	param := make(map[string]string)
 	param["queueName"] = this.queueName
 	if pollingWaitSeconds >= 0 {
@@ -156,26 +154,22 @@ func (this *Queue) ReceiveMessage(pollingWaitSeconds int) (msg Message, err erro
 		param["UserpollingWaitSeconds"] = strconv.Itoa(30000)
 	}
 
-	resMap, err, code := doCall(this.client, param, "ReceiveMessage")
-	if err != nil {
-		//log.Printf("client.call ReceiveMessage failed: %v\n", err.Error())
-		return
+	var resp struct {
+		CommResp
+		Message
 	}
 
-	msg.MsgId = resMap["msgId"].(string)
-	msg.ReceiptHandle = resMap["receiptHandle"].(string)
-	msg.MsgBody = resMap["msgBody"].(string)
-	msg.EnqueueTime = int64(resMap["enqueueTime"].(float64))
-	msg.NextVisibleTime = int64(resMap["nextVisibleTime"].(float64))
-	msg.FirstDequeueTime = int64(resMap["firstDequeueTime"].(float64))
-	msg.DequeueCount = int(resMap["dequeueCount"].(float64))
+	if err := this.client.call("ReceiveMessage", param, &resp); err != nil {
+		return resp.Message, err
+	}
 
-	return
+	if resp.Code != 0 {
+		return resp.Message, &resp.CommResp
+	}
+	return resp.Message, nil
 }
 
-func (this *Queue) BatchReceiveMessage(numOfMsg, pollingWaitSeconds int) (msgs []Message, err error, code int) {
-	code = DEFAULT_ERROR_CODE
-	msgs = make([]Message, 0)
+func (this *Queue) BatchReceiveMessage(numOfMsg, pollingWaitSeconds int) ([]Message, error) {
 	param := make(map[string]string)
 	param["queueName"] = this.queueName
 	param["numOfMsg"] = strconv.Itoa(numOfMsg)
@@ -186,45 +180,30 @@ func (this *Queue) BatchReceiveMessage(numOfMsg, pollingWaitSeconds int) (msgs [
 		param["UserpollingWaitSeconds"] = strconv.Itoa(30000)
 	}
 
-	resMap, err, code := doCall(this.client, param, "BatchReceiveMessage")
-	if err != nil {
-		//log.Printf("client.call BatchReceiveMessage failed: %v\n", err.Error())
-		return
-	}
-	msgInfoList := resMap["msgInfoList"].([]interface{})
-	for _, v := range msgInfoList {
-		msgInfo := v.(map[string]interface{})
-		msg := Message{}
-		msg.MsgId = msgInfo["msgId"].(string)
-		msg.ReceiptHandle = msgInfo["receiptHandle"].(string)
-		msg.MsgBody = msgInfo["msgBody"].(string)
-		msg.EnqueueTime = int64(msgInfo["enqueueTime"].(float64))
-		msg.NextVisibleTime = int64(msgInfo["nextVisibleTime"].(float64))
-		msg.FirstDequeueTime = int64(msgInfo["firstDequeueTime"].(float64))
-		msg.DequeueCount = int(msgInfo["dequeueCount"].(float64))
-
-		msgs = append(msgs, msg)
+	var resp struct {
+		CommResp
+		Msgs []Message `json:"msgInfoList"`
 	}
 
-	return
+	if err := this.client.call("BatchReceiveMessage", param, &resp); err != nil {
+		return nil, err
+	}
+
+	if resp.Code != 0 {
+		return nil, &resp.CommResp
+	}
+	return resp.Msgs, nil
 }
 
-func (this *Queue) DeleteMessage(receiptHandle string) (err error, code int) {
-	code = DEFAULT_ERROR_CODE
+func (this *Queue) DeleteMessage(receiptHandle string) (err error) {
 	param := make(map[string]string)
 	param["queueName"] = this.queueName
 	param["receiptHandle"] = receiptHandle
 
-	_, err, code = doCall(this.client, param, "DeleteMessage")
-	if err != nil {
-		//log.Printf("client.call DeleteMessage failed: %v\n", err.Error())
-		return
-	}
-	return
+	return this.client.callWithoutResult("DeleteMessage", param)
 }
 
-func (this *Queue) BatchDeleteMessage(receiptHandles []string) (err error, code int) {
-	code = DEFAULT_ERROR_CODE
+func (this *Queue) BatchDeleteMessage(receiptHandles []string) (err error) {
 	if len(receiptHandles) == 0 {
 		return
 	}
@@ -234,16 +213,10 @@ func (this *Queue) BatchDeleteMessage(receiptHandles []string) (err error, code 
 		param["receiptHandle."+strconv.Itoa(i+1)] = receiptHandle
 	}
 
-	_, err, code = doCall(this.client, param, "BatchDeleteMessage")
-	if err != nil {
-		//log.Printf("client.call BatchDeleteMessage failed: %v\n", err.Error())
-		return
-	}
-	return
+	return this.client.callWithoutResult("BatchDeleteMessage", param)
 }
 
-func (this *Queue) RewindQueue(backTrackingTime int) (err error, code int) {
-	code = DEFAULT_ERROR_CODE
+func (this *Queue) RewindQueue(backTrackingTime int) (err error) {
 	if backTrackingTime <= 0 {
 		return
 	}
@@ -251,10 +224,5 @@ func (this *Queue) RewindQueue(backTrackingTime int) (err error, code int) {
 	param["queueName"] = this.queueName
 	param["startConsumeTime"] = strconv.Itoa(backTrackingTime)
 
-	_, err, code = doCall(this.client, param, "RewindQueue")
-	if err != nil {
-		//log.Printf("client.call RewindQueue failed: %v\n", err.Error())
-		return
-	}
-	return
+	return this.client.callWithoutResult("RewindQueue", param)
 }
