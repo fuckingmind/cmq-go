@@ -94,14 +94,12 @@ func (this *Queue) GetQueueAttributes() (queueMeta QueueMeta, err error) {
 	return
 }
 
-func (this *Queue) SendMessage(msgBody string) (messageId string, err error) {
-	messageId, err = _sendMessage(this.client, msgBody, this.queueName, 0)
-	return
+func (this *Queue) SendMessage(msgBody string) (string, error) {
+	return _sendMessage(this.client, msgBody, this.queueName, 0)
 }
 
-func (this *Queue) SendDelayMessage(msgBody string, delaySeconds int) (messageId string, err error) {
-	messageId, err = _sendMessage(this.client, msgBody, this.queueName, delaySeconds)
-	return
+func (this *Queue) SendDelayMessage(msgBody string, delaySeconds int) (string, error) {
+	return _sendMessage(this.client, msgBody, this.queueName, delaySeconds)
 }
 
 func _sendMessage(client *CMQClient, msgBody, queueName string, delaySeconds int) (messageId string, err error) {
@@ -126,14 +124,12 @@ func _sendMessage(client *CMQClient, msgBody, queueName string, delaySeconds int
 	return resp.MsgID, nil
 }
 
-func (this *Queue) BatchSendMessage(msgBodys []string) (messageIds []string, err error) {
-	messageIds, err = _batchSendMessage(this.client, msgBodys, this.queueName, 0)
-	return
+func (this *Queue) BatchSendMessage(msgBodys []string) ([]string, error) {
+	return _batchSendMessage(this.client, msgBodys, this.queueName, 0)
 }
 
-func (this *Queue) BatchSendDelayMessage(msgBodys []string, delaySeconds int) (messageIds []string, err error) {
-	messageIds, err = _batchSendMessage(this.client, msgBodys, this.queueName, delaySeconds)
-	return
+func (this *Queue) BatchSendDelayMessage(msgBodys []string, delaySeconds int) ([]string, error) {
+	return _batchSendMessage(this.client, msgBodys, this.queueName, delaySeconds)
 }
 
 func _batchSendMessage(client *CMQClient, msgBodys []string, queueName string, delaySeconds int) (messageIds []string, err error) {

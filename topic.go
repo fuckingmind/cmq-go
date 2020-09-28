@@ -17,16 +17,15 @@ func NewTopic(topicName string, client *CMQClient) (queue *Topic) {
 	}
 }
 
-func (this *Topic) SetTopicAttributes(maxMsgSize int) (err error) {
+func (this *Topic) SetTopicAttributes(maxMsgSize int) error {
 	if maxMsgSize < 1024 || maxMsgSize > 1048576 {
-		err = fmt.Errorf("Invalid parameter maxMsgSize < 1KB or maxMsgSize > 1024KB")
-		return
+		return fmt.Errorf("Invalid parameter maxMsgSize < 1KB or maxMsgSize > 1024KB")
 	}
-	param := make(map[string]string)
-	param["topicName"] = this.topicName
-	param["maxMsgSize"] = strconv.Itoa(maxMsgSize)
 
-	return this.client.callWithoutResult("SetTopicAttributes", param)
+	return this.client.callWithoutResult("SetTopicAttributes", map[string]string{
+		"topicName":  this.topicName,
+		"maxMsgSize": strconv.Itoa(maxMsgSize),
+	})
 }
 
 type TopicMeta struct {
@@ -65,9 +64,8 @@ func (this *Topic) GetTopicAttributes() (TopicMeta, error) {
 	return resp.TopicMeta, nil
 }
 
-func (this *Topic) PublishMessage(message string, tagList []string) (msgId string, err error) {
-	msgId, err = _publishMessage(this.client, this.topicName, message, tagList, "")
-	return
+func (this *Topic) PublishMessage(message string, tagList []string) (string, error) {
+	return _publishMessage(this.client, this.topicName, message, tagList, "")
 }
 
 func _publishMessage(client *CMQClient, topicName, msg string, tagList []string, routingKey string) (string, error) {
