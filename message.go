@@ -1,6 +1,8 @@
 package cmq_go
 
 type Message struct {
+	/** 服务器生成的请求 ID。出现服务器内部错误时，用户可提交此 ID 给后台定位问题 */
+	RequestId string
 	/** 服务器返回的消息ID */
 	MsgId string
 	/** 每次消费唯一的消息句柄，用于删除等操作 */

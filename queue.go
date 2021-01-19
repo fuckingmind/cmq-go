@@ -1,8 +1,8 @@
 package cmq_go
 
 import (
-	"strconv"
 	"fmt"
+	"strconv"
 )
 
 type Queue struct {
@@ -163,6 +163,7 @@ func (this *Queue) ReceiveMessage(pollingWaitSeconds int) (msg Message, err erro
 	}
 
 	msg.MsgId = resMap["msgId"].(string)
+	msg.RequestId = resMap["requestId"].(string)
 	msg.ReceiptHandle = resMap["receiptHandle"].(string)
 	msg.MsgBody = resMap["msgBody"].(string)
 	msg.EnqueueTime = int64(resMap["enqueueTime"].(float64))
@@ -196,6 +197,7 @@ func (this *Queue) BatchReceiveMessage(numOfMsg, pollingWaitSeconds int) (msgs [
 		msgInfo := v.(map[string]interface{})
 		msg := Message{}
 		msg.MsgId = msgInfo["msgId"].(string)
+		msg.RequestId = resMap["requestId"].(string)
 		msg.ReceiptHandle = msgInfo["receiptHandle"].(string)
 		msg.MsgBody = msgInfo["msgBody"].(string)
 		msg.EnqueueTime = int64(msgInfo["enqueueTime"].(float64))
