@@ -152,6 +152,7 @@ func _batchSendMessage(client *CMQClient, msgBodys []string, queueName string, d
 		Msgs []struct {
 			MsgID string `json:"msgId"`
 		} `json:"msgList"`
+		Msg string `json:"msgId,omitempty"`
 	}
 
 	if err = client.call("BatchSendMessage", param, &resp); err != nil {
@@ -164,6 +165,9 @@ func _batchSendMessage(client *CMQClient, msgBodys []string, queueName string, d
 
 	for _, msg := range resp.Msgs {
 		messageIds = append(messageIds, msg.MsgID)
+	}
+	if len(resp.Msg) > 0 {
+		messageIds = append(messageIds, resp.Msg)
 	}
 
 	return messageIds, nil
